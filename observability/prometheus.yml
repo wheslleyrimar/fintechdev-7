@@ -1,0 +1,24 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'payment-service'
+    static_configs:
+      - targets: ['payment-service:8080']
+  
+  - job_name: 'antifraud-service'
+    static_configs:
+      - targets: ['antifraud-service:8080']
+  
+  - job_name: 'notification-service'
+    static_configs:
+      - targets: ['notification-service:8080']
+  
+  - job_name: 'auth-service'
+    static_configs:
+      - targets: ['auth-service:8080']
+  
+  - job_name: 'secret-manager'
+    static_configs:
+      - targets: ['secret-manager:8080']

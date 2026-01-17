@@ -1,0 +1,123 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports: ["5672:5672", "15672:15672"]
+    environment:
+      - RABBITMQ_DEFAULT_USER=admin
+      - RABBITMQ_DEFAULT_PASS=secure_password_123
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.55
+    ports: ["16686:16686", "4317:4317", "14268:14268"]
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports: ["9090:9090"]
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+
+  grafana:
+    image: grafana/grafana:latest
+    ports: ["3000:3000"]
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./observability/grafana/datasources:/etc/grafana/provisioning/datasources
+
+  # Secret Manager (simulado)
+  secret-manager:
+    build: ./services/secret-manager
+    ports: ["8084:8080"]
+    environment:
+      - SERVICE_NAME=secret-manager
+      - JAEGER_ENDPOINT=jaeger:14268
+      - JWT_SECRET=secret-manager-jwt-secret-key-change-in-production
+    depends_on:
+      jaeger:
+        condition: service_started
+
+  # Auth Service
+  auth-service:
+    build: ./services/auth
+    ports: ["8083:8080"]
+    environment:
+      - SERVICE_NAME=auth-service
+      - JAEGER_ENDPOINT=jaeger:14268
+      - JWT_SECRET=change-this-secret-key-in-production-use-secret-manager
+      - JWT_EXPIRY=3600
+      - SECRET_MANAGER_URL=http://secret-manager:8080
+      - SECRET_MANAGER_TOKEN=service-token-auth
+    depends_on:
+      secret-manager:
+        condition: service_started
+      jaeger:
+        condition: service_started
+
+  # Payment Service (modificado para usar autenticação)
+  payment-service:
+    build: ./services/payment
+    ports: ["8080:8080"]
+    environment:
+      - RABBIT_URL=amqp://admin:secure_password_123@rabbitmq:5672/
+      - JAEGER_ENDPOINT=jaeger:14268
+      - AUTH_SERVICE_URL=http://auth-service:8080
+      - SECRET_MANAGER_URL=http://secret-manager:8080
+      - SECRET_MANAGER_TOKEN=service-token-payment
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      auth-service:
+        condition: service_started
+      secret-manager:
+        condition: service_started
+      jaeger:
+        condition: service_started
+
+  antifraud-service:
+    build: ./services/antifraud
+    ports: ["8081:8080"]
+    environment:
+      - RABBIT_URL=amqp://admin:secure_password_123@rabbitmq:5672/
+      - SERVICE_NAME=antifraud
+      - JAEGER_ENDPOINT=jaeger:14268
+      - SECRET_MANAGER_URL=http://secret-manager:8080
+      - SECRET_MANAGER_TOKEN=service-token-antifraud
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      secret-manager:
+        condition: service_started
+      jaeger:
+        condition: service_started
+
+  notification-service:
+    build: ./services/notification
+    ports: ["8082:8080"]
+    environment:
+      - RABBIT_URL=amqp://admin:secure_password_123@rabbitmq:5672/
+      - JAEGER_ENDPOINT=jaeger:14268
+      - SECRET_MANAGER_URL=http://secret-manager:8080
+      - SECRET_MANAGER_TOKEN=service-token-notification
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      secret-manager:
+        condition: service_started
+      jaeger:
+        condition: service_started
+
+volumes:
+  grafana_data:
