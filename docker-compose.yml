@@ -76,6 +76,7 @@ services:
       - AUTH_SERVICE_URL=http://auth-service:8080
       - SECRET_MANAGER_URL=http://secret-manager:8080
       - SECRET_MANAGER_TOKEN=service-token-payment
+      - JWT_SECRET=change-this-secret-key-in-production-use-secret-manager
     depends_on:
       rabbitmq:
         condition: service_healthy

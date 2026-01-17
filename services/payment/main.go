@@ -67,6 +67,7 @@ var (
 	secretManagerURL string
 	secretManagerToken string
 	encryptionKey    []byte
+	jwtSecret        string
 
 	// Métricas de segurança
 	authFailures = promauto.NewCounterVec(
@@ -281,17 +282,23 @@ func validateToken(tokenString string) (*jwt.Token, error) {
 			resp.Body.Close()
 			
 			if validateResp.Valid {
-				// Parse local para obter claims
+				// Parse local para obter claims usando a mesma chave JWT
 				return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-					return []byte("dummy"), nil // Em produção, validar assinatura
+					if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+						return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+					}
+					return []byte(jwtSecret), nil
 				})
 			}
 		}
 	}
 
-	// Fallback: validação local simplificada
+	// Fallback: validação local usando a mesma chave JWT
 	return jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		return []byte("dummy"), nil
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(jwtSecret), nil
 	})
 }
 
@@ -574,6 +581,13 @@ func main() {
 	authServiceURL = os.Getenv("AUTH_SERVICE_URL")
 	secretManagerURL = os.Getenv("SECRET_MANAGER_URL")
 	secretManagerToken = os.Getenv("SECRET_MANAGER_TOKEN")
+	
+	// JWT Secret deve ser o mesmo usado pelo auth-service
+	jwtSecret = os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		jwtSecret = "change-this-secret-key-in-production-use-secret-manager"
+		logger.Warn("Using default JWT secret - should match auth-service!")
+	}
 
 	if err := initEncryption(); err != nil {
 		logger.Fatal("Failed to initialize encryption", zap.Error(err))
