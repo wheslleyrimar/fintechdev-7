@@ -44,7 +44,7 @@ services:
     environment:
       - SERVICE_NAME=secret-manager
       - JAEGER_ENDPOINT=jaeger:14268
-      - JWT_SECRET=secret-manager-jwt-secret-key-change-in-production
+      - JWT_SECRET=change-this-secret-key-in-production-use-secret-manager
     depends_on:
       jaeger:
         condition: service_started

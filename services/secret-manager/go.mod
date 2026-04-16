@@ -3,6 +3,7 @@ module secret-manager
 go 1.22
 
 require (
+	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/prometheus/client_golang v1.19.0
 	go.opentelemetry.io/otel v1.24.0
 	go.opentelemetry.io/otel/exporters/jaeger v1.17.0

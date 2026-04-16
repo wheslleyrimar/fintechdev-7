@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
@@ -157,13 +158,48 @@ func authenticateService(r *http.Request) (string, bool) {
 		return "", false
 	}
 
-	// Remover "Bearer " se presente
+	token := authHeader
 	if len(authHeader) > 7 && authHeader[:7] == "Bearer " {
-		authHeader = authHeader[7:]
+		token = authHeader[7:]
 	}
 
-	service, exists := serviceTokens[authHeader]
-	return service, exists
+	// Tentar token estático primeiro (compatibilidade com serviços internos)
+	if service, exists := serviceTokens[token]; exists {
+		return service, true
+	}
+
+	// Tentar JWT emitido pelo auth-service
+	jwtSecret := os.Getenv("JWT_SECRET")
+	if jwtSecret == "" {
+		return "", false
+	}
+
+	parsed, err := jwt.Parse(token, func(t *jwt.Token) (interface{}, error) {
+		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+		}
+		return []byte(jwtSecret), nil
+	})
+	if err != nil || !parsed.Valid {
+		return "", false
+	}
+
+	claims, ok := parsed.Claims.(jwt.MapClaims)
+	if !ok {
+		return "", false
+	}
+
+	// Aceitar apenas tokens de serviço (type: "service")
+	if tokenType, _ := claims["type"].(string); tokenType != "service" {
+		return "", false
+	}
+
+	serviceName, _ := claims["sub"].(string)
+	if serviceName == "" {
+		return "", false
+	}
+
+	return serviceName, true
 }
 
 // ============================================================================
